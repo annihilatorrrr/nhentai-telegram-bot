@@ -1,9 +1,9 @@
-import { NotFoundError, searchResult, Source } from "./index.js";
 import { IncomingHttpHeaders } from "http";
 import * as cheerio from "cheerio";
 import got, { Response } from "got";
 import { CookieJar } from "tough-cookie";
 import Doujin from "./doujin.js";
+import { NotFoundError, searchResult, Source } from "./index.js";
 import Werror from "../lib/error.js";
 import resolveSourceRequestOptions, {
   SourceRequestOptions,
@@ -151,20 +151,17 @@ export default class eHentai implements Source {
 
     let response: Response<FlareSolverrResponse>;
     try {
-      response = await got.post(
-        new URL("/v1", this.flaresolverrUrl).toString(),
-        {
-          json: {
-            cmd: "request.get",
-            url,
-            maxTimeout: this.flaresolverrMaxTimeout,
-            ...(this.flaresolverrProxyUrl
-              ? { proxy: { url: this.flaresolverrProxyUrl } }
-              : {}),
-          },
-          responseType: "json",
+      response = await got.post(this.flaresolverrUrl, {
+        json: {
+          cmd: "request.get",
+          url,
+          maxTimeout: this.flaresolverrMaxTimeout,
+          ...(this.flaresolverrProxyUrl
+            ? { proxy: { url: this.flaresolverrProxyUrl } }
+            : {}),
         },
-      );
+        responseType: "json",
+      });
     } catch (err) {
       throw new Werror(err, "Making FlareSolverr request");
     }
@@ -183,32 +180,71 @@ export default class eHentai implements Source {
   private parseDoujin(id: string, body: string): Doujin {
     const $ = cheerio.load(body);
 
-    const titleTranslated = $("#info h1").text();
-    const titleOriginal = $("#info h2").text();
-    const numberOfPages = parseInt(
+    const titleTranslated =
+      $("#info h1").text().trim() || $(".gm-title-en").text().trim();
+    const titleOriginal =
+      $("#info h2").text().trim() ||
+      $(".gm-title-jp").text().trim() ||
+      titleTranslated;
+
+    let numberOfPages = parseInt(
       $('#info > div:contains("pages")').text().trim(),
       10,
     );
 
-    const thumbnails = $("#thumbnail-container a.gallerythumb img").map(
-      (_, a) => {
-        const url = a.attribs["data-src"] || a.attribs["src"];
-        if (!url) {
-          throw new Werror("Could not find href in thumbnail");
+    if (!Number.isFinite(numberOfPages)) {
+      numberOfPages = 0;
+      for (const row of $("table.gm-meta-table tr")) {
+        const label = $(row)
+          .find("td.gm-meta-label")
+          .text()
+          .trim()
+          .toLowerCase();
+        if (label !== "length:") {
+          continue;
         }
-        return url;
-      },
-    );
+
+        const value = $(row).find("td.gm-meta-value").text().trim();
+        const parsed = Number.parseInt(value.replace(/[^\d]/g, ""), 10);
+        if (Number.isFinite(parsed)) {
+          numberOfPages = parsed;
+        }
+        break;
+      }
+    }
+
+    const thumbnailElements =
+      $("#thumbnail-container a.gallerythumb img").length > 0
+        ? $("#thumbnail-container a.gallerythumb img")
+        : $("div.gm-thumb-grid img");
+
+    const thumbnails = thumbnailElements.map((_, a) => {
+      const url = a.attribs["data-src"] || a.attribs["src"];
+      if (!url || url.startsWith("data:image/")) {
+        throw new Werror("Could not find href in thumbnail");
+      }
+      return url;
+    });
+
     const thumbnail = thumbnails[0];
     if (!thumbnail) {
       throw new Werror("Could not find cover thumbnail");
     }
 
     const pages: string[] = [...thumbnails].map((href, page) => {
+      const normalized = href.replace(
+        /\/(\d+)t\.(jpg|png|gif|webp)$/,
+        "/$1.$2",
+      );
+      if (normalized !== href) {
+        return normalized;
+      }
+
       return href
         .replace(/\/\d+t\.jpg$/, `/${page + 1}.jpg`)
         .replace(/\/\d+t\.png$/, `/${page + 1}.png`)
-        .replace(/\/\d+t\.gif$/, `/${page + 1}.gif`);
+        .replace(/\/\d+t\.gif$/, `/${page + 1}.gif`)
+        .replace(/\/\d+t\.webp$/, `/${page + 1}.webp`);
     });
 
     const details: Doujin["details"] = {
@@ -225,56 +261,125 @@ export default class eHentai implements Source {
         pretty: new Date().toLocaleString(),
       },
     };
-    const tagContainers = $("#tags > .tag-container");
-    for (const container of tagContainers) {
-      const name = container.children.find((c) => c.type === "text");
-      if (!name || !("data" in name)) {
-        throw new Werror("Could not find name in tag container");
+
+    const tagRows = $("table.gm-tags-table tr");
+    if (tagRows.length > 0) {
+      for (const row of tagRows) {
+        const category = $(row)
+          .find("td.gm-tag-category")
+          .text()
+          .trim()
+          .toLowerCase()
+          .replace(":", "");
+
+        const tags = $(row)
+          .find("a.gm-tag")
+          .map((_, a) => {
+            const el = $(a);
+            const href = el.attr("href");
+            if (!href) {
+              throw new Werror("Could not find href in tag");
+            }
+
+            el.find(".gm-tag-count").remove();
+            const tagName = el.text().replace(/\s+/g, " ").trim();
+            if (!tagName) {
+              throw new Werror("Could not find name in tag");
+            }
+
+            return {
+              name: tagName,
+              url: new URL(href, this.baseUrl).toString(),
+            };
+          })
+          .toArray();
+
+        switch (category) {
+          case "tag":
+          case "tags":
+            details.tags.push(...tags);
+            break;
+          case "artist":
+          case "artists":
+            details.artists.push(...tags);
+            break;
+          case "group":
+          case "groups":
+            details.groups.push(...tags);
+            break;
+          case "language":
+          case "languages":
+            details.languages.push(...tags);
+            break;
+          case "category":
+          case "categories":
+            details.categories.push(...tags);
+            break;
+          case "character":
+          case "characters":
+            details.characters.push(...tags);
+            break;
+          case "parody":
+          case "parodies":
+            details.parodies.push(...tags);
+            break;
+          default:
+            break;
+        }
       }
+    } else {
+      const tagContainers = $("#tags > .tag-container");
+      for (const container of tagContainers) {
+        const name = container.children.find((c) => c.type === "text");
+        if (!name || !("data" in name)) {
+          throw new Werror("Could not find name in tag container");
+        }
 
-      const tags = $(container)
-        .find("span.tags > a")
-        .map((_, a) => {
-          const el = $(a);
-          const href = el.attr("href");
-          if (!href) {
-            throw new Werror("Could not find href in tag");
-          }
-          const name = el.find("span.name").text().trim();
-          if (!href) {
-            throw new Werror("Could not find name in tag");
-          }
+        const tags = $(container)
+          .find("span.tags > a")
+          .map((_, a) => {
+            const el = $(a);
+            const href = el.attr("href");
+            if (!href) {
+              throw new Werror("Could not find href in tag");
+            }
 
-          return {
-            name,
-            url: new URL(href, this.baseUrl).toString(),
-          };
-        });
+            const tagName = el.find("span.name").text().trim();
+            if (!tagName) {
+              throw new Werror("Could not find name in tag");
+            }
 
-      switch (name.data.trim()) {
-        case "Tags":
-          details.tags.push(...tags);
-          break;
-        case "Artists":
-          details.artists.push(...tags);
-          break;
-        case "Groups":
-          details.groups.push(...tags);
-          break;
-        case "Languages":
-          details.languages.push(...tags);
-          break;
-        case "Categories":
-          details.categories.push(...tags);
-          break;
-        case "Characters":
-          details.characters.push(...tags);
-          break;
-        case "Parodies":
-          details.parodies.push(...tags);
-          break;
-        default:
-          throw new Werror("Unknown tag container name: " + name.data);
+            return {
+              name: tagName,
+              url: new URL(href, this.baseUrl).toString(),
+            };
+          });
+
+        switch (name.data.trim()) {
+          case "Tags":
+            details.tags.push(...tags);
+            break;
+          case "Artists":
+            details.artists.push(...tags);
+            break;
+          case "Groups":
+            details.groups.push(...tags);
+            break;
+          case "Languages":
+            details.languages.push(...tags);
+            break;
+          case "Categories":
+            details.categories.push(...tags);
+            break;
+          case "Characters":
+            details.characters.push(...tags);
+            break;
+          case "Parodies":
+            details.parodies.push(...tags);
+            break;
+          default:
+            throw new Werror("Unknown tag container name: " + name.data);
+        }
       }
     }
 
@@ -299,9 +404,15 @@ export default class eHentai implements Source {
 
   parseSearchResults(page: string): searchResult {
     const $ = cheerio.load(page);
-    const total = parseInt($("body h2").text());
+    const totalText = $("body h2").first().text();
+    const parsedTotal = Number.parseInt(totalText.replace(/[^\d]/g, ""), 10);
 
-    const doujins = $(".container > .gallery a").map((_, a) => {
+    const entries =
+      $(".gallery > a.cover").length > 0
+        ? $(".gallery > a.cover")
+        : $(".container > .gallery a");
+
+    const doujins = entries.map((_, a) => {
       const el = $(a);
       const href = el.attr("href");
       if (!href) {
@@ -309,15 +420,21 @@ export default class eHentai implements Source {
       }
       const url = new URL(href, this.baseUrl).toString();
 
-      const id = href.replace(/^\/g\/(\d+)\/$/, "$1");
+      const id = href.replace(/^\/g\/(\d+)\/?$/, "$1");
+      if (!/^\d+$/.test(id)) {
+        throw new Werror("Could not find id in doujin");
+      }
 
       const caption = el.find(".caption").text().trim();
       if (!caption) {
         throw new Werror("Could not find title in doujin");
       }
 
+      const dataSrc = el.find("img").attr("data-src");
+      const fallbackSrc = el.find("img").attr("src");
       const thumbnail =
-        el.find("img").attr("data-src") || el.find("img").attr("src");
+        dataSrc ||
+        (fallbackSrc?.startsWith("data:image/") ? undefined : fallbackSrc);
       if (!thumbnail) {
         throw new Werror("Could not find thumbnail in doujin");
       }
@@ -332,7 +449,7 @@ export default class eHentai implements Source {
 
     return {
       results: doujins.toArray(),
-      total,
+      total: Number.isFinite(parsedTotal) ? parsedTotal : doujins.length,
     };
   }
 }
