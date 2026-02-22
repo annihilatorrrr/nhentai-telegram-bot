@@ -34,9 +34,9 @@
   </details>
 
 ## One-Click Deploy Button
-### Pre-reqs for deploying this project to Heroku or replit.com:
+### Pre-reqs for deploying this project to replit.com:
 
-- Create [Heroku](https://signup.heroku.com/) or [Replit](https://replit.com/signup) account (free)
+- Create [Replit](https://replit.com/signup) account (free)
 - Configure a writable path for the SQLite database file (default: `./data/bot.sqlite`)
 - Get bot token from [@BotFather](https://t.me/BotFather)
 
@@ -51,8 +51,6 @@ On replit.com you may need to run `npm install node && npm install && npm run bu
 
 [![Run on replit.com](https://replit.com/badge/github/sleroq/nhentai-telegram-bot)](https://replit.com/github/sleroq/nhentai-telegram-bot)
 
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/sleroq/nhentai-telegram-bot)
-
 ## Development progress:
 
 - [ ] User-related features
@@ -65,7 +63,7 @@ On replit.com you may need to run `npm install node && npm install && npm run bu
 - [ ] instance features
     - [ ] support for readonly connection with database
     - [x] ability to connect to multiple databases
-    - [x] generate webhook urls automatically from built in env variables on [perl.it](http://perl.it) and [heroku](https://www.heroku.com/)
+    - [x] generate webhook urls automatically from built in env variables on [perl.it](http://perl.it)
 - [ ] Tanslations
 	- [x] Finish translations in the search
 	- [ ] Indonesian
