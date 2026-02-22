@@ -1,8 +1,9 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "*"
 
 jobs:
   build-and-attach:
@@ -23,10 +24,20 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Create artifact archive
-        run: tar -czvf release.tar.gz built/
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
 
-      - name: Upload release asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release.tar.gz
+          # Check if release already exists (created via UI)
+          if gh release view "$tag" > /dev/null 2>&1; then
+            # Upload assets to existing release
+            gh release upload "$tag" main.js manifest.json styles.css cumban.zip --clobber
+          else
+            # Create new release with assets
+            gh release create "$tag" \
+              --title="$tag" \
+              --generate-notes \
+              main.js manifest.json styles.css cumban.zip
+          fi
