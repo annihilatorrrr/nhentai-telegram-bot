@@ -3,7 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - "*"
+      - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   build-and-attach:
@@ -24,20 +27,40 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Package source
+        run: |
+          archive="nhentai-telegram-bot-${GITHUB_REF_NAME}-source.tar.gz"
+          git archive --format=tar.gz --output "$archive" "$GITHUB_SHA"
+
+      - name: Package build output
+        run: |
+          archive="nhentai-telegram-bot-${GITHUB_REF_NAME}-built.tar.gz"
+          tar -czf "$archive" built
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.ref_name }}
+          path: |
+            nhentai-telegram-bot-${{ github.ref_name }}-source.tar.gz
+            nhentai-telegram-bot-${{ github.ref_name }}-built.tar.gz
+
       - name: Upload release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
+          tag="$GITHUB_REF_NAME"
+          source="nhentai-telegram-bot-${tag}-source.tar.gz"
+          built="nhentai-telegram-bot-${tag}-built.tar.gz"
 
           # Check if release already exists (created via UI)
           if gh release view "$tag" > /dev/null 2>&1; then
             # Upload assets to existing release
-            gh release upload "$tag" main.js manifest.json styles.css cumban.zip --clobber
+            gh release upload "$tag" "$source" "$built" --clobber
           else
             # Create new release with assets
             gh release create "$tag" \
               --title="$tag" \
               --generate-notes \
-              main.js manifest.json styles.css cumban.zip
+              "$source" "$built"
           fi
