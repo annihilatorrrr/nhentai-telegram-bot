@@ -20,7 +20,7 @@ export default async function startBot(token: string, logger: Logger) {
 		let message = 'Welcome!\n'
 		message += '/rand - random doujin\n'
 		message += '/settings - preferences\n'
-		message += '/zip <id> - download pages as zip\n'
+		message += '/zip &lt;id&gt; - download pages as zip\n'
 		message += '/help - all commands\n'
 		message += '<code>123123</code> - doujin by id\n\n'
 		message += '<a href="https://github.com/sleroq/nhentai-telegram-bot">GitHub</a> - help with development\n'
