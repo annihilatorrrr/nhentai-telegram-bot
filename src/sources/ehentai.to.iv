@@ -1,0 +1,69 @@
+# Instant View template for ehentai.to
+# Based on Telegram Instant View format version 2.1
+
+~version: "2.1"
+
+# Domain: ehentai.to
+?domain: ehentai\.to
+
+#####   Body   #####
+
+body: //div[has-class("gm-gallery-page")]
+
+#####   Title   #####
+
+title: //div[has-class("gm-title-en")]
+
+#####   Subtitle   #####
+
+subtitle: //div[has-class("gm-title-jp")]
+
+#####   Description   #####
+
+description: //div[has-class("gm-title-en")]
+
+#####   Cover   #####
+
+$cover: //img[has-class("gm-cover-img")]
+@set_attr(src, @data-src): $cover
+@wrap(<figure>): $cover
+cover: $@
+
+#####   Meta   #####
+
+site_name: "E-Hentai"
+
+#####   Fix lazy-loaded images #####
+
+# Set src from data-src for all images
+@set_attr(src, @data-src): //img[@data-src]
+
+# Convert thumbnail URLs to full resolution (remove 't' before .jpg)
+@replace("t.jpg$", ".jpg"): //img/@src
+
+#####   Unwrap images from links #####
+
+# Split the parent <a> tag to move images outside
+@split_parent: //a/img
+
+# Remove empty <a> tags
+@remove: //a[not(node())]
+
+#####   Remove navigation/UI elements #####
+
+@remove: //div[has-class("hp-nb")]
+@remove: //footer
+@remove: //div[@id="messages"]
+@remove: //div[has-class("gm-section-header")]
+@remove: //div[has-class("gm-actions")]
+@remove: //div[has-class("gm-comments-wrap")]
+@remove: //div[has-class("gm-related")]
+@remove: //span[has-class("gm-tag-count")]
+@remove: //div[has-class("gm-thumb-num")]
+
+#####   Final cleanup #####
+
+@remove: //script
+@remove: //style
+@remove: //comment()
+@remove: //div[contains(@style, "display:none")]
